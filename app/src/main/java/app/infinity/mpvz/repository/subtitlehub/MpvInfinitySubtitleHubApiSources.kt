@@ -188,7 +188,13 @@ internal class MpvInfinitySubtitleHubApiSources(
     request: OnlineSubtitleSearchRequest,
     selectedLanguages: Set<String>?,
   ): List<OnlineSubtitle> {
-    if (!languageMatches("ja", selectedLanguages)) return emptyList()
+    if (
+      selectedLanguages != null &&
+        !languageMatches("ja", selectedLanguages) &&
+        !languageMatches("en", selectedLanguages)
+    ) {
+      return emptyList()
+    }
     val apiKey = apiKey(MpvInfinitySubtitleHubSources.JIMAKU_KEY)
     val searchParams =
       if (request.tmdbId != null) {
@@ -228,6 +234,8 @@ internal class MpvInfinitySubtitleHubApiSources(
     return files.mapNotNull { element ->
       val file = element.obj() ?: return@mapNotNull null
       val fileName = file.string("name")?.takeIf(String::isNotBlank) ?: return@mapNotNull null
+      val languageCode = jimakuLanguage(fileName)
+      if (!languageMatches(languageCode, selectedLanguages)) return@mapNotNull null
       val extension = extensionFromName(fileName)
       if (extension !in SUBTITLE_EXTENSIONS && extension !in ARCHIVE_EXTENSIONS) return@mapNotNull null
       if ((file.int("size") ?: JIMAKU_MIN_FILE_SIZE) < JIMAKU_MIN_FILE_SIZE) return@mapNotNull null
@@ -244,8 +252,8 @@ internal class MpvInfinitySubtitleHubApiSources(
         release = fileName,
         media = entry.string("name") ?: entry.string("english_name") ?: request.query,
         displayName = fileName,
-        displayLanguage = displayLanguage("ja"),
-        language = "ja",
+        displayLanguage = displayLanguage(languageCode),
+        language = languageCode,
         source = "Jimaku",
         format = displayFormat(fileName),
         metadata =
@@ -258,6 +266,14 @@ internal class MpvInfinitySubtitleHubApiSources(
           ),
       )
     }.distinctBy { it.url.lowercase() }
+  }
+
+  private fun jimakuLanguage(fileName: String): String {
+    // Jimaku primarily hosts Japanese subtitles. English files are commonly
+    // marked with filename tags such as ENG, en, or English.
+    val englishMarker =
+      Regex("""(^|[\s._\-\[\](){}])(?:eng|en|english)(?=$|[\s._\-\[\](){}])""")
+    return if (englishMarker.containsMatchIn(fileName.lowercase())) "en" else "ja"
   }
 
   private fun searchSubDl(
